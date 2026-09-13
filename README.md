@@ -32,3 +32,7 @@ A Retrieval-Augmented Generation (RAG) pipeline built from scratch in Python.
 
 \- Streamlit
 
+
+
+🔗 \*\*Live demo:\*\* \[Try it here](https://rag-app-aztqetcxxpxjhmddstrrrm.streamlit.app/)
+
