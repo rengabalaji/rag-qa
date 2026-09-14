@@ -78,9 +78,48 @@ Summary:"""
     )
     return response.text
 
+# ---------- Page setup ----------
+
+st.set_page_config(page_title="Document Q&A + Summarizer", page_icon="📄", layout="centered")
+
+# Hide Streamlit's default branding/toolbar
+st.markdown("""
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    .stAppDeployButton {display: none;}
+    [data-testid="stStatusWidget"] {display: none;}
+    [data-testid="stToolbar"] {display: none;}
+    </style>
+""", unsafe_allow_html=True)
+
+# Visual polish
+st.markdown("""
+    <style>
+    .stApp {
+        background-color: #0e1117;
+    }
+    h1 {
+        background: linear-gradient(90deg, #4F8BF9, #A66CFF);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-weight: 800;
+    }
+    .stButton>button {
+        border-radius: 8px;
+        border: 1px solid #4F8BF9;
+        padding: 0.5em 1.5em;
+    }
+    .stTabs [data-baseweb="tab"] {
+        font-size: 16px;
+        font-weight: 600;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # ---------- UI ----------
 
-st.set_page_config(page_title="Document Q&A + Summarizer", page_icon="📄")
 st.title("📄 Document Q&A & Summarizer")
 st.write("Upload any PDF, then ask questions about it or get a quick summary.")
 
