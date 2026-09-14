@@ -86,10 +86,10 @@ st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    header {visibility: hidden;}
     .stAppDeployButton {display: none;}
     [data-testid="stStatusWidget"] {display: none;}
     [data-testid="stToolbar"] {display: none;}
+    [data-testid="collapsedControl"] {visibility: visible !important;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -103,14 +103,6 @@ if "qa_history" not in st.session_state:
 with st.sidebar:
     st.markdown("## 📄 DocuChat")
     st.caption("RAG-powered document assistant")
-
-    st.divider()
-
-    theme_choice = st.selectbox(
-        "Theme", ["Dark", "Light"],
-        index=0 if st.session_state.theme == "dark" else 1
-    )
-    st.session_state.theme = theme_choice.lower()
 
     st.divider()
 
@@ -162,7 +154,14 @@ st.markdown(f"""
 
 # ---------- Main UI ----------
 
-st.title("📄 Document Q&A & Summarizer")
+col1, col2 = st.columns([5, 1])
+with col1:
+    st.title("📄 Document Q&A & Summarizer")
+with col2:
+    if st.button("🌓 Theme"):
+        st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
+        st.rerun()
+
 st.write("Upload any PDF, then ask questions about it or get a quick summary.")
 
 uploaded_file = st.file_uploader("Upload a PDF", type="pdf")
