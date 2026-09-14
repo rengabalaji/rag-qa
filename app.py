@@ -1,4 +1,4 @@
-import os
+]import os
 import numpy as np
 import streamlit as st
 from dotenv import load_dotenv
@@ -88,8 +88,7 @@ st.markdown("""
     footer {visibility: hidden;}
     .stAppDeployButton {display: none;}
     [data-testid="stStatusWidget"] {display: none;}
-    [data-testid="stToolbar"] {display: none;}
-    [data-testid="collapsedControl"] {visibility: visible !important;}
+    [data-testid="stToolbarActions"] {display: none;}
     </style>
 """, unsafe_allow_html=True)
 
