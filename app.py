@@ -80,7 +80,7 @@ Summary:"""
 
 # ---------- Page setup ----------
 
-st.set_page_config(page_title="Document Q&A + Summarizer", page_icon="📄", layout="centered")
+st.set_page_config(page_title="DocuChat", page_icon="📄", layout="centered")
 
 st.markdown("""
     <style>
@@ -93,17 +93,43 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ---------- Theme toggle ----------
-
 if "theme" not in st.session_state:
     st.session_state.theme = "dark"
 if "qa_history" not in st.session_state:
     st.session_state.qa_history = []
 
-col1, col2 = st.columns([5, 1])
-with col2:
-    if st.button("🌓 Theme"):
-        st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
+# ---------- Sidebar ----------
+
+with st.sidebar:
+    st.markdown("## 📄 DocuChat")
+    st.caption("RAG-powered document assistant")
+
+    st.divider()
+
+    theme_choice = st.selectbox(
+        "Theme", ["Dark", "Light"],
+        index=0 if st.session_state.theme == "dark" else 1
+    )
+    st.session_state.theme = theme_choice.lower()
+
+    st.divider()
+
+    st.markdown("**Built with**")
+    st.caption("Python · Gemini API · Streamlit")
+
+    with st.expander("How it works"):
+        st.markdown("""
+        1. Extract text from your PDF
+        2. Split into overlapping chunks
+        3. Embed each chunk
+        4. Retrieve relevant chunks per question
+        5. Generate a grounded answer
+        """)
+
+    st.divider()
+    st.caption("Built by Rengabalaji")
+
+# ---------- Theme styling ----------
 
 if st.session_state.theme == "dark":
     bg_color, text_color = "#0e1117", "#fafafa"
@@ -133,31 +159,6 @@ st.markdown(f"""
     }}
     </style>
 """, unsafe_allow_html=True)
-
-# ---------- Sidebar ----------
-
-with st.sidebar:
-    st.header("ℹ️ About this app")
-    st.write(
-        "A Retrieval-Augmented Generation (RAG) app built from scratch — "
-        "no LangChain, no vector database. Upload any PDF and ask questions "
-        "or get an instant summary."
-    )
-    st.subheader("Tech stack")
-    st.markdown("""
-    - Python
-    - Google Gemini API (embeddings + generation)
-    - numpy (cosine similarity, from scratch)
-    - Streamlit
-    """)
-    st.subheader("How it works")
-    st.markdown("""
-    1. Extract text from your PDF
-    2. Split into overlapping chunks
-    3. Convert each chunk into an embedding
-    4. Find the most relevant chunks for your question
-    5. Generate a grounded answer using only that context
-    """)
 
 # ---------- Main UI ----------
 
