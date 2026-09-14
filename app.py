@@ -171,6 +171,11 @@ else:
     if "processed_filename" not in st.session_state or st.session_state.processed_filename != uploaded_file.name:
         with st.spinner("Reading and processing your document..."):
             full_text = extract_text(uploaded_file)
+
+            if not full_text.strip():
+                st.error("⚠️ This PDF appears to have no extractable text (it may be a scanned image). Please try a different PDF with selectable text.")
+                st.stop()
+
             chunks = chunk_text(full_text)
             chunk_embeddings = [get_embedding(c) for c in chunks]
 
@@ -181,10 +186,6 @@ else:
         st.session_state.qa_history = []
 
     st.success(f"'{uploaded_file.name}' is ready.")
-
-    m1, m2 = st.columns(2)
-    m1.metric("Chunks created", len(st.session_state.chunks))
-    m2.metric("Characters processed", len(st.session_state.full_text))
 
     tab1, tab2 = st.tabs(["💬 Ask a question", "📝 Summarize"])
 
