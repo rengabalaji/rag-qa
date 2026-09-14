@@ -82,7 +82,6 @@ Summary:"""
 
 st.set_page_config(page_title="Document Q&A + Summarizer", page_icon="📄", layout="centered")
 
-# Hide Streamlit's default branding/toolbar
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
@@ -94,31 +93,73 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Visual polish
-st.markdown("""
+# ---------- Theme toggle ----------
+
+if "theme" not in st.session_state:
+    st.session_state.theme = "dark"
+if "qa_history" not in st.session_state:
+    st.session_state.qa_history = []
+
+col1, col2 = st.columns([5, 1])
+with col2:
+    if st.button("🌓 Theme"):
+        st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
+
+if st.session_state.theme == "dark":
+    bg_color, text_color = "#0e1117", "#fafafa"
+else:
+    bg_color, text_color = "#ffffff", "#0e1117"
+
+st.markdown(f"""
     <style>
-    .stApp {
-        background-color: #0e1117;
-    }
-    h1 {
+    .stApp {{
+        background-color: {bg_color};
+        color: {text_color};
+    }}
+    h1 {{
         background: linear-gradient(90deg, #4F8BF9, #A66CFF);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         font-weight: 800;
-    }
-    .stButton>button {
+    }}
+    .stButton>button {{
         border-radius: 8px;
         border: 1px solid #4F8BF9;
         padding: 0.5em 1.5em;
-    }
-    .stTabs [data-baseweb="tab"] {
+    }}
+    .stTabs [data-baseweb="tab"] {{
         font-size: 16px;
         font-weight: 600;
-    }
+    }}
     </style>
 """, unsafe_allow_html=True)
 
-# ---------- UI ----------
+# ---------- Sidebar ----------
+
+with st.sidebar:
+    st.header("ℹ️ About this app")
+    st.write(
+        "A Retrieval-Augmented Generation (RAG) app built from scratch — "
+        "no LangChain, no vector database. Upload any PDF and ask questions "
+        "or get an instant summary."
+    )
+    st.subheader("Tech stack")
+    st.markdown("""
+    - Python
+    - Google Gemini API (embeddings + generation)
+    - numpy (cosine similarity, from scratch)
+    - Streamlit
+    """)
+    st.subheader("How it works")
+    st.markdown("""
+    1. Extract text from your PDF
+    2. Split into overlapping chunks
+    3. Convert each chunk into an embedding
+    4. Find the most relevant chunks for your question
+    5. Generate a grounded answer using only that context
+    """)
+
+# ---------- Main UI ----------
 
 st.title("📄 Document Q&A & Summarizer")
 st.write("Upload any PDF, then ask questions about it or get a quick summary.")
@@ -138,8 +179,13 @@ else:
         st.session_state.chunks = chunks
         st.session_state.chunk_embeddings = chunk_embeddings
         st.session_state.processed_filename = uploaded_file.name
+        st.session_state.qa_history = []
 
-    st.success(f"'{uploaded_file.name}' is ready. Ask a question or get a summary below.")
+    st.success(f"'{uploaded_file.name}' is ready.")
+
+    m1, m2 = st.columns(2)
+    m1.metric("Chunks created", len(st.session_state.chunks))
+    m2.metric("Characters processed", len(st.session_state.full_text))
 
     tab1, tab2 = st.tabs(["💬 Ask a question", "📝 Summarize"])
 
@@ -152,10 +198,25 @@ else:
                     st.session_state.chunks,
                     st.session_state.chunk_embeddings
                 )
-            st.write(answer)
+            st.session_state.qa_history.insert(0, (question, answer))
+
+        if st.session_state.qa_history:
+            st.subheader("Conversation")
+            for q, a in st.session_state.qa_history:
+                st.markdown(f"**Q: {q}**")
+                st.write(a)
+                st.divider()
 
     with tab2:
         if st.button("Generate summary"):
             with st.spinner("Summarizing..."):
                 summary = summarize_document(st.session_state.full_text)
-            st.write(summary)
+            st.session_state.last_summary = summary
+
+        if "last_summary" in st.session_state:
+            st.write(st.session_state.last_summary)
+            st.download_button(
+                "⬇️ Download summary as text",
+                st.session_state.last_summary,
+                file_name="summary.txt"
+            )
