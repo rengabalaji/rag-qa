@@ -1,25 +1,45 @@
 import os
+import logging
 import numpy as np
 import streamlit as st
 from dotenv import load_dotenv
 from google import genai
+from google.genai import errors as genai_errors
 from pypdf import PdfReader
 
 load_dotenv()
+
+# ---------- Logging setup ----------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
 except Exception:
     api_key = os.getenv("GEMINI_API_KEY")
 
+if not api_key:
+    st.error("⚠️ No API key found. Please set GEMINI_API_KEY in your .env file or Streamlit secrets.")
+    st.stop()
+
 client = genai.Client(api_key=api_key)
 
 def extract_text(uploaded_file):
-    reader = PdfReader(uploaded_file)
-    text = ""
-    for page in reader.pages:
-        text += page.extract_text()
-    return text
+    try:
+        reader = PdfReader(uploaded_file)
+        text = ""
+        for page in reader.pages:
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text
+        return text
+    except Exception as e:
+        logger.error(f"PDF extraction failed: {e}")
+        st.error("⚠️ Couldn't read this file. Please make sure it's a valid PDF.")
+        st.stop()
 
 def chunk_text(text, chunk_size=600, overlap=100):
     chunks = []
@@ -30,16 +50,30 @@ def chunk_text(text, chunk_size=600, overlap=100):
         start += chunk_size - overlap
     return chunks
 
-def get_embedding(text):
-    result = client.models.embed_content(
-        model="models/gemini-embedding-001",
-        contents=text
-    )
-    return result.embeddings[0].values
+def get_embedding(text, retries=2):
+    for attempt in range(retries + 1):
+        try:
+            result = client.models.embed_content(
+                model="models/gemini-embedding-001",
+                contents=text
+            )
+            return result.embeddings[0].values
+        except genai_errors.ClientError as e:
+            logger.error(f"Embedding API error (attempt {attempt+1}): {e}")
+            if attempt == retries:
+                st.error("⚠️ Couldn't process the document right now (API error). Please try again in a moment.")
+                st.stop()
+        except Exception as e:
+            logger.error(f"Unexpected embedding error: {e}")
+            st.error("⚠️ Something went wrong while processing the document.")
+            st.stop()
 
 def cosine_similarity(a, b):
     a, b = np.array(a), np.array(b)
-    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+    denom = np.linalg.norm(a) * np.linalg.norm(b)
+    if denom == 0:
+        return 0.0
+    return np.dot(a, b) / denom
 
 def find_best_chunks(question, chunks, chunk_embeddings, top_k=2):
     q_emb = get_embedding(question)
@@ -48,8 +82,9 @@ def find_best_chunks(question, chunks, chunk_embeddings, top_k=2):
     return [chunks[i] for i in top_indices]
 
 def answer_question(question, chunks, chunk_embeddings):
-    context = "\n\n".join(find_best_chunks(question, chunks, chunk_embeddings))
-    prompt = f"""Answer using ONLY the context below.
+    try:
+        context = "\n\n".join(find_best_chunks(question, chunks, chunk_embeddings))
+        prompt = f"""Answer using ONLY the context below.
 If the answer isn't there, say "I don't know based on the provided document."
 
 Context:
@@ -58,25 +93,38 @@ Context:
 Question: {question}
 
 Answer:"""
-    response = client.models.generate_content(
-        model="models/gemini-3.6-flash",
-        contents=prompt
-    )
-    return response.text
+        response = client.models.generate_content(
+            model="models/gemini-3.6-flash",
+            contents=prompt
+        )
+        return response.text
+    except genai_errors.ClientError as e:
+        logger.error(f"Generation API error: {e}")
+        return "⚠️ Sorry, I couldn't get an answer right now due to an API error. Please try again."
+    except Exception as e:
+        logger.error(f"Unexpected error answering question: {e}")
+        return "⚠️ Something unexpected went wrong. Please try again."
 
 def summarize_document(full_text):
-    prompt = f"""Summarize the following document in a clear, well-organized way.
+    try:
+        prompt = f"""Summarize the following document in a clear, well-organized way.
 Give a short overview paragraph, followed by 4-6 key bullet points covering the most important information.
 
 Document:
 {full_text}
 
 Summary:"""
-    response = client.models.generate_content(
-        model="models/gemini-3.6-flash",
-        contents=prompt
-    )
-    return response.text
+        response = client.models.generate_content(
+            model="models/gemini-3.6-flash",
+            contents=prompt
+        )
+        return response.text
+    except genai_errors.ClientError as e:
+        logger.error(f"Summarization API error: {e}")
+        return "⚠️ Sorry, I couldn't generate a summary right now due to an API error. Please try again."
+    except Exception as e:
+        logger.error(f"Unexpected error summarizing: {e}")
+        return "⚠️ Something unexpected went wrong while summarizing."
 
 # ---------- Page setup ----------
 
@@ -168,6 +216,10 @@ uploaded_file = st.file_uploader("Upload a PDF", type="pdf")
 if uploaded_file is None:
     st.info("👆 Upload a PDF to get started.")
 else:
+    if uploaded_file.size > 20 * 1024 * 1024:  # 20MB safety limit
+        st.error("⚠️ File too large. Please upload a PDF under 20MB.")
+        st.stop()
+
     if "processed_filename" not in st.session_state or st.session_state.processed_filename != uploaded_file.name:
         with st.spinner("Reading and processing your document..."):
             full_text = extract_text(uploaded_file)
@@ -184,6 +236,7 @@ else:
         st.session_state.chunk_embeddings = chunk_embeddings
         st.session_state.processed_filename = uploaded_file.name
         st.session_state.qa_history = []
+        logger.info(f"Processed document: {uploaded_file.name}, {len(chunks)} chunks")
 
     st.success(f"'{uploaded_file.name}' is ready.")
 
@@ -199,6 +252,7 @@ else:
                     st.session_state.chunk_embeddings
                 )
             st.session_state.qa_history.insert(0, (question, answer))
+            logger.info(f"Question answered: {question[:50]}")
 
         if st.session_state.qa_history:
             st.subheader("Conversation")
