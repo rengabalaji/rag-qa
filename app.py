@@ -298,10 +298,11 @@ else:
                 summary = summarize_document(st.session_state.full_text)
             st.session_state.last_summary = summary
 
-        if "last_summary" in st.session_state:
-            st.write(st.session_state.last_summary)
-            st.download_button(
-                "⬇️ Download summary as text",
-                st.session_state.last_summary,
-                file_name="summary.txt"
-            )
+      if "last_summary" in st.session_state:
+    st.write(st.session_state.last_summary)
+    st.code(st.session_state.last_summary, language=None)
+    st.download_button(
+        "⬇️ Download summary as text",
+        st.session_state.last_summary,
+        file_name="summary.txt"
+    )
