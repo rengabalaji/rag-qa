@@ -201,13 +201,16 @@ st.markdown(f"""
 
 # ---------- Main UI ----------
 
-col1, col2 = st.columns([5, 1])
+col1, col2, col3 = st.columns([4, 1, 1])
 with col1:
     st.title("📄 Document Q&A & Summarizer")
 with col2:
     if st.button("🌓 Theme"):
         st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
         st.rerun()
+with col3:
+    if st.button("❄️ Snow"):
+        st.snow()
 
 st.write("Upload any PDF, then ask questions about it or get a quick summary.")
 
@@ -244,9 +247,6 @@ else:
         logger.info(f"Processed document: {uploaded_file.name}, {len(chunks)} chunks")
 
     st.success(f"'{uploaded_file.name}' is ready.")
-
-    if is_new_document:
-        st.balloons()
 
     tab1, tab2 = st.tabs(["💬 Ask a question", "📝 Summarize"])
 
