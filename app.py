@@ -144,8 +144,8 @@ if "theme" not in st.session_state:
     st.session_state.theme = "dark"
 if "qa_history" not in st.session_state:
     st.session_state.qa_history = []
-if "pending_question" not in st.session_state:
-    st.session_state.pending_question = ""
+if "question_input" not in st.session_state:
+    st.session_state.question_input = ""
 
 # ---------- Sidebar ----------
 
@@ -170,7 +170,7 @@ with st.sidebar:
     st.divider()
 
     if st.button("🔄 Reset / Start Over"):
-        for key in ["processed_filename", "full_text", "chunks", "chunk_embeddings", "qa_history", "last_summary", "pending_question"]:
+        for key in ["processed_filename", "full_text", "chunks", "chunk_embeddings", "qa_history", "last_summary", "question_input"]:
             if key in st.session_state:
                 del st.session_state[key]
         st.rerun()
@@ -265,7 +265,6 @@ else:
     tab1, tab2 = st.tabs(["💬 Ask a question", "📝 Summarize"])
 
     with tab1:
-        # Suggested sample questions
         st.caption("Try asking:")
         sample_questions = [
             "What is this document about?",
@@ -276,15 +275,16 @@ else:
         for i, sq in enumerate(sample_questions):
             with chip_cols[i]:
                 if st.button(sq, key=f"chip_{i}"):
-                    st.session_state.pending_question = sq
+                    st.session_state.question_input = sq
+                    st.rerun()
 
-        question = st.text_input("Your question:", value=st.session_state.pending_question, key="question_input")
+        question = st.text_input("Your question:", key="question_input")
 
         ask_col, regen_col = st.columns([1, 1])
         ask_clicked = ask_col.button("Ask")
         regen_clicked = regen_col.button("🔁 Regenerate last answer", disabled=len(st.session_state.qa_history) == 0)
 
-        if (question and (ask_clicked or st.session_state.pending_question == question)) or regen_clicked:
+        if (question and ask_clicked) or regen_clicked:
             target_question = st.session_state.qa_history[0][0] if regen_clicked else question
             with st.spinner("Thinking..."):
                 answer = answer_question(
@@ -296,7 +296,6 @@ else:
                 st.session_state.qa_history[0] = (target_question, answer)
             else:
                 st.session_state.qa_history.insert(0, (target_question, answer))
-            st.session_state.pending_question = ""
             logger.info(f"Question answered: {target_question[:50]}")
             st.rerun()
 
