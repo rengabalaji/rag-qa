@@ -220,7 +220,12 @@ else:
         st.error("⚠️ File too large. Please upload a PDF under 20MB.")
         st.stop()
 
-    if "processed_filename" not in st.session_state or st.session_state.processed_filename != uploaded_file.name:
+    is_new_document = (
+        "processed_filename" not in st.session_state
+        or st.session_state.processed_filename != uploaded_file.name
+    )
+
+    if is_new_document:
         with st.spinner("Reading and processing your document..."):
             full_text = extract_text(uploaded_file)
 
@@ -239,6 +244,9 @@ else:
         logger.info(f"Processed document: {uploaded_file.name}, {len(chunks)} chunks")
 
     st.success(f"'{uploaded_file.name}' is ready.")
+
+    if is_new_document:
+        st.balloons()
 
     tab1, tab2 = st.tabs(["💬 Ask a question", "📝 Summarize"])
 
