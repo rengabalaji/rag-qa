@@ -166,6 +166,14 @@ with st.sidebar:
         """)
 
     st.divider()
+
+    if st.button("🔄 Reset / Start Over"):
+        for key in ["processed_filename", "full_text", "chunks", "chunk_embeddings", "qa_history", "last_summary"]:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.rerun()
+
+    st.divider()
     st.caption("Built by Rengabalaji")
 
 # ---------- Theme styling ----------
@@ -246,7 +254,12 @@ else:
         st.session_state.qa_history = []
         logger.info(f"Processed document: {uploaded_file.name}, {len(chunks)} chunks")
 
+    # Word/character count
+    word_count = len(st.session_state.full_text.split())
+    char_count = len(st.session_state.full_text)
+
     st.success(f"'{uploaded_file.name}' is ready.")
+    st.caption(f"📊 {word_count:,} words · {char_count:,} characters · {len(st.session_state.chunks)} chunks")
 
     tab1, tab2 = st.tabs(["💬 Ask a question", "📝 Summarize"])
 
@@ -267,7 +280,17 @@ else:
             for q, a in st.session_state.qa_history:
                 st.markdown(f"**Q: {q}**")
                 st.write(a)
+                # Copy-friendly display: code block gives a built-in copy icon
+                st.code(a, language=None)
                 st.divider()
+
+            # Export full conversation
+            transcript = "\n\n".join([f"Q: {q}\nA: {a}" for q, a in reversed(st.session_state.qa_history)])
+            st.download_button(
+                "⬇️ Export full conversation",
+                transcript,
+                file_name="conversation.txt"
+            )
 
     with tab2:
         if st.button("Generate summary"):
