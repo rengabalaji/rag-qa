@@ -227,7 +227,7 @@ uploaded_file = st.file_uploader("Upload a PDF", type="pdf")
 if uploaded_file is None:
     st.info("👆 Upload a PDF to get started.")
 else:
-    if uploaded_file.size > 20 * 1024 * 1024:  # 20MB safety limit
+    if uploaded_file.size > 20 * 1024 * 1024:
         st.error("⚠️ File too large. Please upload a PDF under 20MB.")
         st.stop()
 
@@ -254,7 +254,6 @@ else:
         st.session_state.qa_history = []
         logger.info(f"Processed document: {uploaded_file.name}, {len(chunks)} chunks")
 
-    # Word/character count
     word_count = len(st.session_state.full_text.split())
     char_count = len(st.session_state.full_text)
 
@@ -280,11 +279,9 @@ else:
             for q, a in st.session_state.qa_history:
                 st.markdown(f"**Q: {q}**")
                 st.write(a)
-                # Copy-friendly display: code block gives a built-in copy icon
                 st.code(a, language=None)
                 st.divider()
 
-            # Export full conversation
             transcript = "\n\n".join([f"Q: {q}\nA: {a}" for q, a in reversed(st.session_state.qa_history)])
             st.download_button(
                 "⬇️ Export full conversation",
@@ -298,11 +295,11 @@ else:
                 summary = summarize_document(st.session_state.full_text)
             st.session_state.last_summary = summary
 
-      if "last_summary" in st.session_state:
-    st.write(st.session_state.last_summary)
-    st.code(st.session_state.last_summary, language=None)
-    st.download_button(
-        "⬇️ Download summary as text",
-        st.session_state.last_summary,
-        file_name="summary.txt"
-    )
+        if "last_summary" in st.session_state:
+            st.write(st.session_state.last_summary)
+            st.code(st.session_state.last_summary, language=None)
+            st.download_button(
+                "⬇️ Download summary as text",
+                st.session_state.last_summary,
+                file_name="summary.txt"
+            )
