@@ -38,8 +38,7 @@ def extract_text(uploaded_file):
         return text
     except Exception as e:
         logger.error(f"PDF extraction failed: {e}")
-        st.error("⚠️ Couldn't read this file. Please make sure it's a valid PDF.")
-        st.stop()
+        return None
 
 def chunk_text(text, chunk_size=600, overlap=100):
     chunks = []
@@ -75,17 +74,27 @@ def cosine_similarity(a, b):
         return 0.0
     return np.dot(a, b) / denom
 
-def find_best_chunks(question, chunks, chunk_embeddings, top_k=2):
+def find_best_chunks_multi(question, doc_names, documents, top_k=3):
+    """Search across one or more selected documents, tagging each result with its source."""
     q_emb = get_embedding(question)
-    sims = [cosine_similarity(q_emb, emb) for emb in chunk_embeddings]
-    top_indices = np.argsort(sims)[::-1][:top_k]
-    return [chunks[i] for i in top_indices]
+    all_candidates = []  # (similarity, chunk_text, source_filename)
+    for name in doc_names:
+        doc = documents[name]
+        for chunk, emb in zip(doc["chunks"], doc["embeddings"]):
+            sim = cosine_similarity(q_emb, emb)
+            all_candidates.append((sim, chunk, name))
+    all_candidates.sort(key=lambda x: x[0], reverse=True)
+    return all_candidates[:top_k]
 
-def answer_question(question, chunks, chunk_embeddings):
+def answer_question_multi(question, doc_names, documents):
     try:
-        context = "\n\n".join(find_best_chunks(question, chunks, chunk_embeddings))
-        prompt = f"""Answer using ONLY the context below.
-If the answer isn't there, say "I don't know based on the provided document."
+        top_matches = find_best_chunks_multi(question, doc_names, documents)
+        context_parts = [f"[From: {name}]\n{chunk}" for _, chunk, name in top_matches]
+        context = "\n\n".join(context_parts)
+
+        prompt = f"""Answer using ONLY the context below. Each piece of context is labeled with its source document.
+If the answer isn't there, say "I don't know based on the provided document(s)."
+When relevant, mention which document the answer came from.
 
 Context:
 {context}
@@ -97,13 +106,14 @@ Answer:"""
             model="models/gemini-3.6-flash",
             contents=prompt
         )
-        return response.text
+        sources_used = sorted(set(name for _, _, name in top_matches))
+        return response.text, sources_used
     except genai_errors.ClientError as e:
         logger.error(f"Generation API error: {e}")
-        return "⚠️ Sorry, I couldn't get an answer right now due to an API error. Please try again."
+        return "⚠️ Sorry, I couldn't get an answer right now due to an API error. Please try again.", []
     except Exception as e:
         logger.error(f"Unexpected error answering question: {e}")
-        return "⚠️ Something unexpected went wrong. Please try again."
+        return "⚠️ Something unexpected went wrong. Please try again.", []
 
 def summarize_document(full_text):
     try:
@@ -146,6 +156,8 @@ if "qa_history" not in st.session_state:
     st.session_state.qa_history = []
 if "question_input" not in st.session_state:
     st.session_state.question_input = ""
+if "documents" not in st.session_state:
+    st.session_state.documents = {}  # filename -> {full_text, chunks, embeddings}
 
 # ---------- Sidebar ----------
 
@@ -160,17 +172,22 @@ with st.sidebar:
 
     with st.expander("How it works"):
         st.markdown("""
-        1. Extract text from your PDF
+        1. Extract text from your PDFs
         2. Split into overlapping chunks
         3. Embed each chunk
-        4. Retrieve relevant chunks per question
-        5. Generate a grounded answer
+        4. Retrieve relevant chunks per question, across selected documents
+        5. Generate a grounded answer with source labels
         """)
 
     st.divider()
 
-    if st.button("🔄 Reset / Start Over"):
-        for key in ["processed_filename", "full_text", "chunks", "chunk_embeddings", "qa_history", "last_summary", "question_input"]:
+    if st.session_state.documents:
+        st.markdown("**Loaded documents**")
+        for name in st.session_state.documents:
+            st.caption(f"• {name}")
+
+    if st.button("🔄 Reset / Clear All Documents"):
+        for key in ["documents", "qa_history", "last_summary", "question_input"]:
             if key in st.session_state:
                 del st.session_state[key]
         st.rerun()
@@ -213,7 +230,7 @@ st.markdown(f"""
 
 col1, col2, col3 = st.columns([4, 1, 1])
 with col1:
-    st.title("📄 Document Q&A & Summarizer")
+    st.title("📄 Multi-Document Q&A & Summarizer")
 with col2:
     if st.button("🌓 Theme"):
         st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
@@ -222,54 +239,61 @@ with col3:
     if st.button("❄️ Snow"):
         st.snow()
 
-st.write("Upload any PDF, then ask questions about it or get a quick summary.")
+st.write("Upload one or more PDFs, then ask questions across all of them or summarize one at a time.")
 
-uploaded_file = st.file_uploader("Upload a PDF", type="pdf")
+uploaded_files = st.file_uploader("Upload PDF(s)", type="pdf", accept_multiple_files=True)
 
-if uploaded_file is None:
-    st.info("👆 Upload a PDF to get started.")
-else:
-    if uploaded_file.size > 20 * 1024 * 1024:
-        st.error("⚠️ File too large. Please upload a PDF under 20MB.")
-        st.stop()
+if uploaded_files:
+    for uploaded_file in uploaded_files:
+        if uploaded_file.name in st.session_state.documents:
+            continue  # already processed, skip re-embedding
 
-    is_new_document = (
-        "processed_filename" not in st.session_state
-        or st.session_state.processed_filename != uploaded_file.name
-    )
+        if uploaded_file.size > 20 * 1024 * 1024:
+            st.error(f"⚠️ '{uploaded_file.name}' is too large (over 20MB). Skipped.")
+            continue
 
-    if is_new_document:
-        with st.spinner("Reading and processing your document..."):
+        with st.spinner(f"Processing '{uploaded_file.name}'..."):
             full_text = extract_text(uploaded_file)
 
+            if full_text is None:
+                st.error(f"⚠️ Couldn't read '{uploaded_file.name}'. Please make sure it's a valid PDF.")
+                continue
+
             if not full_text.strip():
-                st.error("⚠️ This PDF appears to have no extractable text (it may be a scanned image). Please try a different PDF with selectable text.")
-                st.stop()
+                st.error(f"⚠️ '{uploaded_file.name}' has no extractable text (may be a scanned image). Skipped.")
+                continue
 
             chunks = chunk_text(full_text)
-            chunk_embeddings = [get_embedding(c) for c in chunks]
+            embeddings = [get_embedding(c) for c in chunks]
 
-        st.session_state.full_text = full_text
-        st.session_state.chunks = chunks
-        st.session_state.chunk_embeddings = chunk_embeddings
-        st.session_state.processed_filename = uploaded_file.name
-        st.session_state.qa_history = []
+        st.session_state.documents[uploaded_file.name] = {
+            "full_text": full_text,
+            "chunks": chunks,
+            "embeddings": embeddings
+        }
         logger.info(f"Processed document: {uploaded_file.name}, {len(chunks)} chunks")
 
-    word_count = len(st.session_state.full_text.split())
-    char_count = len(st.session_state.full_text)
-
-    st.success(f"'{uploaded_file.name}' is ready.")
-    st.caption(f"📊 {word_count:,} words · {char_count:,} characters · {len(st.session_state.chunks)} chunks")
+if not st.session_state.documents:
+    st.info("👆 Upload at least one PDF to get started.")
+else:
+    doc_names = list(st.session_state.documents.keys())
+    total_words = sum(len(d["full_text"].split()) for d in st.session_state.documents.values())
+    st.success(f"{len(doc_names)} document(s) ready · {total_words:,} total words")
 
     tab1, tab2 = st.tabs(["💬 Ask a question", "📝 Summarize"])
 
     with tab1:
+        selected_docs = st.multiselect(
+            "Search in:",
+            options=doc_names,
+            default=doc_names
+        )
+
         st.caption("Try asking:")
         sample_questions = [
-            "What is this document about?",
+            "What is this about?",
             "Summarize the key points",
-            "What are the main requirements or rules mentioned?"
+            "What are the main rules mentioned?"
         ]
         chip_cols = st.columns(len(sample_questions))
         for i, sq in enumerate(sample_questions):
@@ -284,30 +308,32 @@ else:
         ask_clicked = ask_col.button("Ask")
         regen_clicked = regen_col.button("🔁 Regenerate last answer", disabled=len(st.session_state.qa_history) == 0)
 
-        if (question and ask_clicked) or regen_clicked:
+        if (question and ask_clicked and selected_docs) or regen_clicked:
             target_question = st.session_state.qa_history[0][0] if regen_clicked else question
             with st.spinner("Thinking..."):
-                answer = answer_question(
-                    target_question,
-                    st.session_state.chunks,
-                    st.session_state.chunk_embeddings
-                )
+                answer, sources = answer_question_multi(target_question, selected_docs, st.session_state.documents)
             if regen_clicked:
-                st.session_state.qa_history[0] = (target_question, answer)
+                st.session_state.qa_history[0] = (target_question, answer, sources)
             else:
-                st.session_state.qa_history.insert(0, (target_question, answer))
+                st.session_state.qa_history.insert(0, (target_question, answer, sources))
             logger.info(f"Question answered: {target_question[:50]}")
             st.rerun()
+        elif question and ask_clicked and not selected_docs:
+            st.warning("Please select at least one document to search in.")
 
         if st.session_state.qa_history:
             st.subheader("Conversation")
-            for q, a in st.session_state.qa_history:
+            for entry in st.session_state.qa_history:
+                q, a = entry[0], entry[1]
+                sources = entry[2] if len(entry) > 2 else []
                 st.markdown(f"**Q: {q}**")
                 st.write(a)
+                if sources:
+                    st.caption(f"📎 Sources: {', '.join(sources)}")
                 st.code(a, language=None)
                 st.divider()
 
-            transcript = "\n\n".join([f"Q: {q}\nA: {a}" for q, a in reversed(st.session_state.qa_history)])
+            transcript = "\n\n".join([f"Q: {e[0]}\nA: {e[1]}" for e in reversed(st.session_state.qa_history)])
             st.download_button(
                 "⬇️ Export full conversation",
                 transcript,
@@ -315,12 +341,16 @@ else:
             )
 
     with tab2:
+        doc_to_summarize = st.selectbox("Choose a document to summarize:", doc_names)
+
         if st.button("Generate summary"):
-            with st.spinner("Summarizing..."):
-                summary = summarize_document(st.session_state.full_text)
+            with st.spinner(f"Summarizing '{doc_to_summarize}'..."):
+                summary = summarize_document(st.session_state.documents[doc_to_summarize]["full_text"])
             st.session_state.last_summary = summary
+            st.session_state.last_summary_doc = doc_to_summarize
 
         if "last_summary" in st.session_state:
+            st.caption(f"Summary of: {st.session_state.get('last_summary_doc', '')}")
             st.write(st.session_state.last_summary)
             st.code(st.session_state.last_summary, language=None)
             st.download_button(
