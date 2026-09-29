@@ -255,8 +255,7 @@ if not st.session_state.documents:
     st.info("👆 Upload at least one PDF to get started.")
 else:
     doc_names = list(st.session_state.documents.keys())
-    total_words = sum(len(d["full_text"].split()) for d in st.session_state.documents.values())
-    st.success(f"{len(doc_names)} document(s) ready · {total_words:,} total words")
+    st.success(f"{len(doc_names)} document(s) ready")
 
     tab1, tab2 = st.tabs(["💬 Ask a question", "📝 Summarize"])
 
@@ -266,19 +265,6 @@ else:
             options=doc_names,
             default=doc_names
         )
-
-        st.caption("Try asking:")
-        sample_questions = [
-            "What is this about?",
-            "Summarize the key points",
-            "What are the main rules mentioned?"
-        ]
-        chip_cols = st.columns(len(sample_questions))
-        for i, sq in enumerate(sample_questions):
-            with chip_cols[i]:
-                if st.button(sq, key=f"chip_{i}"):
-                    st.session_state.question_input = sq
-                    st.rerun()
 
         question = st.text_input("Your question:", key="question_input")
 
