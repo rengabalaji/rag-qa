@@ -1,4 +1,5 @@
 import os
+import time
 import logging
 import numpy as np
 import streamlit as st
@@ -49,7 +50,7 @@ def chunk_text(text, chunk_size=600, overlap=100):
         start += chunk_size - overlap
     return chunks
 
-def get_embedding(text, retries=2):
+def get_embedding(text, retries=3):
     for attempt in range(retries + 1):
         try:
             result = client.models.embed_content(
@@ -60,8 +61,10 @@ def get_embedding(text, retries=2):
         except genai_errors.ClientError as e:
             logger.error(f"Embedding API error (attempt {attempt+1}): {e}")
             if attempt == retries:
-                st.error("⚠️ Couldn't process the document right now (API error). Please try again in a moment.")
+                st.error("⚠️ Couldn't process the document right now (API rate limit). Please wait a minute and try again.")
                 st.stop()
+            wait_time = 2 ** attempt
+            time.sleep(wait_time)
         except Exception as e:
             logger.error(f"Unexpected embedding error: {e}")
             st.error("⚠️ Something went wrong while processing the document.")
@@ -75,9 +78,8 @@ def cosine_similarity(a, b):
     return np.dot(a, b) / denom
 
 def find_best_chunks_multi(question, doc_names, documents, top_k=3):
-    """Search across one or more selected documents, tagging each result with its source."""
     q_emb = get_embedding(question)
-    all_candidates = []  # (similarity, chunk_text, source_filename)
+    all_candidates = []
     for name in doc_names:
         doc = documents[name]
         for chunk, emb in zip(doc["chunks"], doc["embeddings"]):
@@ -147,17 +149,34 @@ st.markdown("""
     .stAppDeployButton {display: none;}
     [data-testid="stStatusWidget"] {display: none;}
     [data-testid="stToolbarActions"] {display: none;}
+    .stApp {
+        background-color: #0e1117;
+        color: #fafafa;
+    }
+    h1 {
+        background: linear-gradient(90deg, #4F8BF9, #A66CFF);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-weight: 800;
+    }
+    .stButton>button {
+        border-radius: 8px;
+        border: 1px solid #4F8BF9;
+        padding: 0.5em 1.5em;
+    }
+    .stTabs [data-baseweb="tab"] {
+        font-size: 16px;
+        font-weight: 600;
+    }
     </style>
 """, unsafe_allow_html=True)
 
-if "theme" not in st.session_state:
-    st.session_state.theme = "dark"
 if "qa_history" not in st.session_state:
     st.session_state.qa_history = []
 if "question_input" not in st.session_state:
     st.session_state.question_input = ""
 if "documents" not in st.session_state:
-    st.session_state.documents = {}  # filename -> {full_text, chunks, embeddings}
+    st.session_state.documents = {}
 
 # ---------- Sidebar ----------
 
@@ -195,50 +214,9 @@ with st.sidebar:
     st.divider()
     st.caption("Built by Rengabalaji")
 
-# ---------- Theme styling ----------
-
-if st.session_state.theme == "dark":
-    bg_color, text_color = "#0e1117", "#fafafa"
-else:
-    bg_color, text_color = "#ffffff", "#0e1117"
-
-st.markdown(f"""
-    <style>
-    .stApp {{
-        background-color: {bg_color};
-        color: {text_color};
-    }}
-    h1 {{
-        background: linear-gradient(90deg, #4F8BF9, #A66CFF);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        font-weight: 800;
-    }}
-    .stButton>button {{
-        border-radius: 8px;
-        border: 1px solid #4F8BF9;
-        padding: 0.5em 1.5em;
-    }}
-    .stTabs [data-baseweb="tab"] {{
-        font-size: 16px;
-        font-weight: 600;
-    }}
-    </style>
-""", unsafe_allow_html=True)
-
 # ---------- Main UI ----------
 
-col1, col2, col3 = st.columns([4, 1, 1])
-with col1:
-    st.title("📄 Multi-Document Q&A & Summarizer")
-with col2:
-    if st.button("🌓 Theme"):
-        st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
-        st.rerun()
-with col3:
-    if st.button("❄️ Snow"):
-        st.snow()
-
+st.title("📄 Multi-Document Q&A & Summarizer")
 st.write("Upload one or more PDFs, then ask questions across all of them or summarize one at a time.")
 
 uploaded_files = st.file_uploader("Upload PDF(s)", type="pdf", accept_multiple_files=True)
@@ -246,7 +224,7 @@ uploaded_files = st.file_uploader("Upload PDF(s)", type="pdf", accept_multiple_f
 if uploaded_files:
     for uploaded_file in uploaded_files:
         if uploaded_file.name in st.session_state.documents:
-            continue  # already processed, skip re-embedding
+            continue
 
         if uploaded_file.size > 20 * 1024 * 1024:
             st.error(f"⚠️ '{uploaded_file.name}' is too large (over 20MB). Skipped.")
